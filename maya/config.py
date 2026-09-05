@@ -58,7 +58,7 @@ LLM_TIMEOUT = 180                      # seconds
 # ---------------------------------------------------------------------------
 # ASR — faster-whisper, fully local (Silero VAD is enabled at transcribe time)
 # ---------------------------------------------------------------------------
-ASR_MODEL = "small"                    # small (fast) | base | medium | large-v3 (best)
+ASR_MODEL = "medium"                   # small (fast) | medium (accurate, GPU) | large-v3 (best)
 ASR_LANGUAGE = None                    # None = auto-detect (handles ne + en mix)
 ASR_DEVICE = "auto"                    # auto | cpu | cuda
 

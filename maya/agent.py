@@ -160,7 +160,8 @@ class Agent:
             except (json.JSONDecodeError, ValueError):
                 raw = []
 
-        clean = _CHANGE_TAG.sub("", response).strip()
+        clean = _CHANGE_TAG.sub("", response)
+        clean = _CONFIRM_TAG.sub("", clean).strip()
         menu = self.get_menu()
         order = _apply_change(prev_order, raw, menu)
         if _REMOVE_WORDS.search(user_text):
@@ -168,6 +169,17 @@ class Agent:
         if order:
             clean = _fix_total(clean, order)
         return clean, order
+
+    def parse_confirm(self, response: str) -> dict | None:
+        """Return the customer details from a <confirm> block, if the order was finalized."""
+        m = _CONFIRM_RE.search(response)
+        if m:
+            try:
+                data = json.loads(m.group(1).strip())
+                return data if isinstance(data, dict) else None
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return None
 
     def greeting(self) -> str:
         return GREETING
@@ -179,6 +191,8 @@ class Agent:
 # ---------------------------------------------------------------------------
 _CHANGE_RE = re.compile(r"<change>(.*?)</change>", re.DOTALL | re.IGNORECASE)
 _CHANGE_TAG = re.compile(r"<change>.*?</change>", re.DOTALL | re.IGNORECASE)
+_CONFIRM_RE = re.compile(r"<confirm>(.*?)</confirm>", re.DOTALL | re.IGNORECASE)
+_CONFIRM_TAG = re.compile(r"<confirm>.*?</confirm>", re.DOTALL | re.IGNORECASE)
 _REMOVE_WORDS = re.compile(r"remove|हटाउ|हटाय|हटाए|निकाल|निकाले|निकालेर|काढ", re.IGNORECASE)
 
 

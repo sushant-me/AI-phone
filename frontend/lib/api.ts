@@ -179,7 +179,11 @@ export type StreamHandlers = {
   onToken?: (text: string) => void;
   onAudio?: (b64: string, fmt?: string) => void;
   onCart?: (items: CartItem[]) => void;
-  onDone?: (response: string, order: CartItem[]) => void;
+  onDone?: (
+    response: string,
+    order: CartItem[],
+    orderConfirmed?: number | null,
+  ) => void;
   onError?: (message: string) => void;
 };
 
@@ -256,6 +260,7 @@ export async function streamTurn(
         items?: CartItem[];
         response?: string;
         order?: CartItem[];
+        order_confirmed?: number | null;
         message?: string;
       };
       try {
@@ -278,7 +283,11 @@ export async function streamTurn(
           handlers.onCart?.(ev.items ?? []);
           break;
         case "done":
-          handlers.onDone?.(ev.response ?? "", ev.order ?? []);
+          handlers.onDone?.(
+            ev.response ?? "",
+            ev.order ?? [],
+            ev.order_confirmed ?? null,
+          );
           break;
         case "error":
           handlers.onError?.(ev.message ?? "Something went wrong");

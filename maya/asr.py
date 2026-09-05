@@ -12,6 +12,7 @@ so the package can still be imported.
 from __future__ import annotations
 
 import io
+import os
 import sys
 import threading
 import types
@@ -24,6 +25,19 @@ from .config import ASR_DEVICE, ASR_LANGUAGE, ASR_MODEL
 _model = None
 _model_size = ASR_MODEL
 _load_lock = threading.Lock()
+
+
+def _expose_torch_cuda_dlls() -> None:
+    """torch (cu128) bundles the CUDA runtime (cublas/cudart). Add its `lib`
+    dir to the DLL search path so CTranslate2 can use the GPU for Whisper."""
+    try:
+        import torch
+
+        lib = os.path.join(os.path.dirname(torch.__file__), "lib")
+        if os.path.isdir(lib):
+            os.add_dll_directory(lib)
+    except Exception:
+        pass
 
 
 def current_model() -> str:
@@ -63,20 +77,13 @@ def _ensure_av_importable() -> None:
 
 
 def _cuda_runtime_available() -> bool:
-    """True only if the CUDA runtime (cublas) is actually loadable.
-
-    ctranslate2 bundles cuDNN but not the CUDA runtime, so `device="cuda"`
-    fails lazily at encode time with "cublas64_12.dll not found" when the
-    NVIDIA driver is present but the CUDA toolkit is not installed.
-    """
-    if sys.platform != "win32":
-        return True
+    """True if CTranslate2 can actually use CUDA (needs the CUDA runtime)."""
+    _expose_torch_cuda_dlls()
     try:
-        import ctypes
+        import ctranslate2
 
-        ctypes.WinDLL("cublas64_12.dll")
-        return True
-    except OSError:
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
         return False
 
 

@@ -19,6 +19,7 @@ export default function TalkPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [online, setOnline] = useState<boolean | null>(null);
   const [phone, setPhone] = useState("");
   const [name, setName] = useState("");
@@ -84,6 +85,7 @@ export default function TalkPage() {
     async (opts: { audio?: Blob; text?: string }) => {
       setBusy(true);
       setError(null);
+      setSuccess(null);
       interruptAudio();
       const history = messages.map((m) => ({ role: m.role, content: m.content }));
       try {
@@ -94,12 +96,18 @@ export default function TalkPage() {
               setMessages((prev) => [...prev, { role: "user", content: t }]),
             onAudio: speak,
             onCart: (items) => setCart(items),
-            onDone: (response, order) => {
+            onDone: (response, order, orderConfirmed) => {
               setMessages((prev) => [
                 ...prev,
                 { role: "assistant", content: response },
               ]);
-              setCart(order);
+              setCart(orderConfirmed ? [] : order);
+              if (orderConfirmed) {
+                setSuccess(`✅ Order #${orderConfirmed} saved — Cash on Delivery`);
+                setPhone("");
+                setName("");
+                setAddress("");
+              }
             },
             onError: (msg) => setError(msg),
           },
@@ -226,6 +234,12 @@ export default function TalkPage() {
           {error && (
             <div className="rounded-xl bg-brand-50 px-4 py-3 text-sm text-brand-700">
               {error}
+            </div>
+          )}
+
+          {success && (
+            <div className="rounded-xl bg-[#e7f5ec] px-4 py-3 text-sm font-medium text-good">
+              {success}
             </div>
           )}
           <div ref={bottomRef} />

@@ -179,9 +179,10 @@ def turn(
         history_msgs = json.loads(history) if history else []
     except json.JSONDecodeError:
         history_msgs = []
-    prev_order = _parse_order_field(order)
-    _inject_order(history_msgs, prev_order)
     history_msgs.append({"role": "user", "content": transcript})
+    prev_order = _parse_order_field(order)
+    customer = _extract_customer(history_msgs)
+    _inject_order(history_msgs, prev_order, customer)
 
     # 3. LLM response + authoritative order (from the <change> block)
     try:
@@ -190,6 +191,7 @@ def turn(
         raise HTTPException(status_code=502, detail=f"LLM failed: {exc}")
 
     clean, cart = agent.finalize(response, prev_order, transcript)
+    order_id = _maybe_save_order(agent.parse_confirm(response), cart, customer)
 
     # 4. TTS
     audio_b64, fmt = _speak_b64(clean) if clean else (None, "audio/wav")
@@ -200,6 +202,7 @@ def turn(
         "audio_b64": audio_b64,
         "fmt": fmt,
         "cart": cart,
+        "order_confirmed": order_id,
     }
 
 
@@ -233,9 +236,10 @@ def turn_stream(
         history_msgs = json.loads(history) if history else []
     except json.JSONDecodeError:
         history_msgs = []
-    prev_order = _parse_order_field(order)
-    _inject_order(history_msgs, prev_order)
     history_msgs.append({"role": "user", "content": transcript})
+    prev_order = _parse_order_field(order)
+    customer = _extract_customer(history_msgs)
+    _inject_order(history_msgs, prev_order, customer)
 
     def gen():
         yield _sse({"type": "transcript", "text": transcript})
@@ -279,8 +283,9 @@ def turn_stream(
 
         response = "".join(parts).strip()
         clean, cart = agent.finalize(response, prev_order, transcript)
+        order_id = _maybe_save_order(agent.parse_confirm(response), cart, customer)
         yield _sse({"type": "cart", "items": cart})
-        yield _sse({"type": "done", "response": clean, "order": cart})
+        yield _sse({"type": "done", "response": clean, "order": cart, "order_confirmed": order_id})
 
     return StreamingResponse(gen(), media_type="text/event-stream")
 
@@ -401,10 +406,58 @@ def _order_ctx(cart) -> str:
     return ", ".join(f"{c['qty']}x {c['name']}" for c in cart)
 
 
-def _inject_order(history_msgs: list, prev_order: list) -> None:
-    """Feed the LLM the current order so it maintains it across turns."""
+_PHONE_RE = re.compile(r"\b(?:98|97|96)\d{8}\b")
+
+
+def _extract_customer(history_msgs: list) -> dict:
+    """Pull phone / address / name out of the conversation as a fallback."""
+    phone = address = name = ""
+    for m in history_msgs:
+        if m.get("role") != "user":
+            continue
+        txt = m.get("content", "")
+        pm = _PHONE_RE.search(txt)
+        if pm:
+            phone = pm.group(0)
+        if re.search(r"deliver|delivery|पठाउ|पुर्या|ठेगाना|पछाडि|अगाडि|नजिकै|location", txt, re.IGNORECASE):
+            a = re.sub(
+                r"deliver\w*|delivery\w*|पठाउ\w*|पुर्या\w*|ठेगाना\w*|location\w*|garna|गर्ना|garnu|गर्नु|को|to|please",
+                " ", txt, flags=re.IGNORECASE,
+            )
+            a = re.sub(r"\s+", " ", a).strip(" ,.")
+            if a:
+                address = a
+    return {"phone": phone, "address": address, "name": name}
+
+
+def _inject_order(history_msgs: list, prev_order: list, customer: dict | None = None) -> None:
+    """Feed the LLM the current order + customer details so it maintains them."""
     ctx = "Current order so far (respect this; the caller only changes what they say): " + _order_ctx(prev_order)
+    if customer:
+        bits = []
+        if customer.get("address"):
+            bits.append(f"address: {customer['address']}")
+        if customer.get("phone"):
+            bits.append(f"phone: {customer['phone']}")
+        if customer.get("name"):
+            bits.append(f"name: {customer['name']}")
+        if bits:
+            ctx += " | Customer details so far: " + "; ".join(bits) + " (include these in <confirm> when confirming)"
     history_msgs.insert(0, {"role": "system", "content": ctx})
+
+
+def _maybe_save_order(confirm: dict | None, cart: list, customer: dict | None = None) -> int | None:
+    """Auto-save the order when Maya confirms it (no manual click needed)."""
+    if not (confirm and cart):
+        return None
+    customer = customer or {}
+    phone = str(confirm.get("phone") or customer.get("phone") or "")
+    name = str(confirm.get("name") or customer.get("name") or "")
+    address = str(confirm.get("address") or customer.get("address") or "")
+    items = [(it["menu_item_id"], it["name"], it["qty"], it["price"], "") for it in cart]
+    order_id = db.create_order(phone, name, address, items)
+    db.log_call(phone, summary=f"Order #{order_id} confirmed: " + ", ".join(f"{i['qty']}x {i['name']}" for i in cart))
+    return order_id
 
 
 def _sse(obj: dict) -> str:
