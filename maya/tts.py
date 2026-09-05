@@ -23,7 +23,7 @@ import numpy as np
 
 from .config import PIPER_MODEL_PATH, TTS_PITCH, TTS_RATE, TTS_VOICE
 
-_mode = "natural"  # natural | local | omnivoice
+_mode = "omnivoice"  # omnivoice (human/GPU) | natural (edge-tts) | local (Piper)
 _piper_voice = None
 _omnivoice_model = None
 _omnivoice_lock = threading.Lock()
@@ -119,6 +119,9 @@ def _load_omnivoice():
         if _omnivoice_model is not None:
             return _omnivoice_model
         import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError("CUDA not available for OmniVoice")
         import transformers
         from transformers.models.higgs_audio_v2_tokenizer.modeling_higgs_audio_v2_tokenizer import (
             HiggsAudioV2TokenizerModel as _H,

@@ -65,12 +65,18 @@ def _warmup_llm() -> None:
 
 
 def _warmup_tts() -> None:
-    """Load the local Piper voice once so the first reply speaks instantly."""
+    """Load the configured voice once so the first reply speaks fast."""
     try:
         from maya import tts as tts_mod
 
-        tts_mod._load_piper()
-        print("[maya] TTS (Piper) warmed up")
+        if tts_mod.mode() == "omnivoice":
+            tts_mod._load_omnivoice()
+            print("[maya] TTS (OmniVoice) warmed up")
+        elif tts_mod.mode() == "local":
+            tts_mod._load_piper()
+            print("[maya] TTS (Piper) warmed up")
+        else:
+            print("[maya] TTS (edge-tts) ready")
     except Exception as exc:  # pragma: no cover
         print("[maya] TTS warmup failed:", exc)
 
